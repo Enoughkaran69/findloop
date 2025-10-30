@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { ref, onValue, set, remove } from "firebase/database";
+import "@/styles/find.css";
 
 interface Profile {
   uid: string;
@@ -165,6 +166,7 @@ export default function FindPeoplePage() {
   return (
     <div className="find-page">
       <h2>Find People</h2>
+      <div className="background-gradient"></div>
 
       {/* Loading indicator while Firebase data arrives */}
       {loading && (
@@ -172,7 +174,7 @@ export default function FindPeoplePage() {
           <div className="loading-bar">
             <div className="loading-progress" />
           </div>
-          <p>Loading people...</p>
+          <p>Looking for amazing people...</p>
         </div>
       )}
 

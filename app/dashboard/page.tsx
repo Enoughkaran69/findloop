@@ -3,12 +3,20 @@ import { useEffect, useState } from "react";
 import { auth, logout, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { ref, set, onDisconnect } from "firebase/database";
+import { ref, set, onDisconnect, onValue } from "firebase/database";
+
+interface Profile {
+  uid: string;
+  displayName?: string | null;
+  photoURL?: string | null;
+}
 
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [connections, setConnections] = useState<string[]>([]);
+  const [connectedProfiles, setConnectedProfiles] = useState<Record<string, Profile>>({});
   const router = useRouter();
 
   useEffect(() => {
@@ -27,9 +35,14 @@ export default function DashboardPage() {
           online: true,
         }).catch((e) => console.error("Failed to write profile", e));
 
-        // remove profile when the client disconnects
+        // mark user offline when the client disconnects instead of removing the whole profile
+        // this prevents the profile from being deleted on page refresh/close while still
+        // signaling to others that the user is offline and recording a lastSeen timestamp.
         try {
-          onDisconnect(profileRef).remove();
+          onDisconnect(profileRef).update({
+            online: false,
+            lastSeen: new Date().toISOString(),
+          });
         } catch (e) {
           // onDisconnect may throw if using emulator or not supported in the environment
         }
@@ -44,6 +57,38 @@ export default function DashboardPage() {
       router.replace("/");
     }
   }, [loading, user, router]);
+
+  // listen to my connections for the dashboard (used to show/hide messages card)
+  useEffect(() => {
+    if (!user) {
+      setConnections([]);
+      return;
+    }
+    const cRef = ref(db, `connections/${user.uid}`);
+    const unsub = onValue(cRef, (snap) => {
+      const val = snap.val() || {};
+      setConnections(Object.keys(val));
+    });
+    return () => unsub();
+  }, [user]);
+
+  // fetch profiles for connected users so we can show names/avatars in the card
+  useEffect(() => {
+    if (connections.length === 0) {
+      setConnectedProfiles({});
+      return;
+    }
+    const unsubHandlers: Array<() => void> = [];
+    connections.forEach((uid) => {
+      const pRef = ref(db, `profiles/${uid}`);
+      const unsub = onValue(pRef, (snap) => {
+        const val = snap.val();
+        setConnectedProfiles((s) => ({ ...s, [uid]: val }));
+      });
+      unsubHandlers.push(() => unsub());
+    });
+    return () => unsubHandlers.forEach((u) => u());
+  }, [connections]);
 
   if (loading) {
     return (
@@ -184,7 +229,51 @@ export default function DashboardPage() {
 
           {/* Action Cards Grid */}
           <div className="action-cards-grid">
-            
+
+            {/* Direct Messages Card - only show if user has connections */}
+            {connections.length > 0 && (
+              <div className="action-card messages-card">
+                <div className="card-icon-wrapper">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    <path d="M8 10h.01M12 10h.01M16 10h.01"></path>
+                  </svg>
+                </div>
+                <h2 className="card-title">Direct Messages</h2>
+                <p className="card-description">Your {connections.length} Friends</p>
+
+                <div className="connections-preview">
+                  {connections.slice(0, 6).map((uid) => {
+                    const p = connectedProfiles[uid];
+                    return (
+                      <div key={uid} className="connection-preview-row">
+                        <div className="person-info small">
+                          {p?.photoURL ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={p.photoURL} alt={p.displayName || uid} className="avatar" />
+                          ) : (
+                            <div className="avatar-placeholder">{(p?.displayName || "?").charAt(0)}</div>
+                          )}
+                          <div>
+                            <div className="name">{p?.displayName || "No name"}</div>
+                            
+                          </div>
+                        </div>
+                        <div>
+                          
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  
+                </div>
+                <div className="card-decoration card-dec-2"></div>
+              </div>
+            )}
+
             {/* Find People Card */}
             <div className="action-card find-people-card">
               <div className="card-icon-wrapper">
@@ -209,85 +298,21 @@ export default function DashboardPage() {
               <div className="card-decoration card-dec-1"></div>
             </div>
 
-            {/* Direct Messages Card */}
-            <div className="action-card messages-card">
-              <div className="card-icon-wrapper">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                  <path d="M8 10h.01M12 10h.01M16 10h.01"></path>
-                </svg>
-              </div>
-              <h2 className="card-title">Direct Messages</h2>
-              <p className="card-description">Continue your conversations and stay connected</p>
-              <button 
-                onClick={() => router.push('/messages')}
-                className="action-btn secondary-btn"
-              >
-                <span>Open Messages</span>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                  <polyline points="12 5 19 12 12 19"></polyline>
-                </svg>
-              </button>
-              <div className="card-decoration card-dec-2"></div>
-            </div>
-
           </div>
 
-          {/* Stats Section */}
-          <div className="stats-section">
-            <div className="stat-card">
-              <div className="stat-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-              </div>
-              <div className="stat-content">
-                <h3 className="stat-value">0</h3>
-                <p className="stat-label">Connections</p>
-              </div>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                </svg>
-              </div>
-              <div className="stat-content">
-                <h3 className="stat-value">0</h3>
-                <p className="stat-label">Messages</p>
-              </div>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
-                </svg>
-              </div>
-              <div className="stat-content">
-                <h3 className="stat-value">0</h3>
-                <p className="stat-label">Matches</p>
-              </div>
-            </div>
-          </div>
-
+          
         </div>
       </main>
 
-        {/* Floating modal for welcome card */}
-        {showWelcomeModal && (
-          <div className="modal-overlay" onClick={() => setShowWelcomeModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <button className="modal-close" onClick={() => setShowWelcomeModal(false)}>×</button>
-              <WelcomeCard />
-            </div>
+      {/* Floating modal for welcome card */}
+      {showWelcomeModal && (
+        <div className="modal-overlay" onClick={() => setShowWelcomeModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowWelcomeModal(false)}>×</button>
+            <WelcomeCard />
           </div>
-        )}
+        </div>
+      )}
     </div>
   );
 }

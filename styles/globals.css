@@ -1074,16 +1074,50 @@ body {
   position: absolute;
   right: 12px;
   top: 12px;
-  background: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.95);
   border: none;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   font-size: 20px;
-  line-height: 36px;
+  line-height: 40px;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(16,24,40,0.08);
+  box-shadow: 0 8px 20px rgba(16,24,40,0.12);
+  z-index: 9999; /* ensure close is above the welcome card */
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
+/* increase hit area on small screens */
+@media (max-width: 480px) {
+  .modal-close { width:44px; height:44px; font-size:22px; line-height:44px }
+}
+
+/* ensure modal content stacks above overlay */
+.modal-content { z-index: 1005 }
+
+/* Modal specific adjustments for welcome card and logout button */
+.modal-content .welcome-card {
+  margin: 0 auto;
+  box-shadow: 
+    0 30px 80px rgba(16,24,40,0.18),
+    0 8px 24px rgba(16,24,40,0.08);
+}
+
+.modal-content .logout-btn {
+  display: inline-flex;
+  margin: 18px auto 0;
+  padding: 0.6rem 1rem;
+  width: auto;
+  background: linear-gradient(135deg, #ff6b9d 0%, #c06c84 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 8px 20px rgba(255,107,157,0.18);
+}
+
+.modal-content .logout-btn:hover { transform: translateY(-2px) }
 
 @media (prefers-reduced-motion: reduce) {
   *,
