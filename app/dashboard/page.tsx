@@ -1,18 +1,39 @@
 "use client";
 import { useEffect, useState } from "react";
-import { auth, logout } from "@/lib/firebase";
+import { auth, logout, db } from "@/lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { useRouter } from "next/navigation";
+import { ref, set, onDisconnect } from "firebase/database";
 
 export default function DashboardPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
+      // publish basic profile info to Realtime DB so other users can discover
+      if (u) {
+        const profileRef = ref(db, `profiles/${u.uid}`);
+        set(profileRef, {
+          uid: u.uid,
+          displayName: u.displayName || null,
+          email: u.email || null,
+          photoURL: u.photoURL || null,
+          lastSeen: new Date().toISOString(),
+          online: true,
+        }).catch((e) => console.error("Failed to write profile", e));
+
+        // remove profile when the client disconnects
+        try {
+          onDisconnect(profileRef).remove();
+        } catch (e) {
+          // onDisconnect may throw if using emulator or not supported in the environment
+        }
+      }
     });
     return () => unsub();
   }, []);
@@ -63,6 +84,58 @@ export default function DashboardPage() {
   // TypeScript can't infer that `user` is non-null here, so guard again.
   if (!user) return null;
 
+  const WelcomeCard = () => (
+    <div className="welcome-card">
+      <div className="avatar-section">
+        <div className="avatar-wrapper">
+          {user.photoURL ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={user.photoURL} alt={user.displayName || "avatar"} className="avatar" />
+          ) : (
+            <div className="avatar-placeholder">
+              {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="welcome-text">
+        <h1 className="welcome-title">
+          Welcome back, <span className="user-name">{user.displayName?.split(' ')[0] || 'Friend'}</span>!
+        </h1>
+        <p className="welcome-subtitle">Ready to make meaningful connections?</p>
+      </div>
+
+      <div className="user-info">
+        <div className="info-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <span>{user.displayName || 'User'}</span>
+        </div>
+        <div className="info-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+            <polyline points="22,6 12,13 2,6"></polyline>
+          </svg>
+          <span>{user.email}</span>
+        </div>
+      </div>
+      <button 
+        onClick={async () => { await logout(); router.replace('/'); }} 
+        className="logout-btn"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Logout
+      </button>
+    </div>
+  );
+
   return (
     <div className="dashboard">
       <div className="background-gradient"></div>
@@ -92,17 +165,13 @@ export default function DashboardPage() {
             <span className="logo-text">Findloop</span>
           </div>
           
-          <button 
-            onClick={async () => { await logout(); router.replace('/'); }} 
-            className="logout-btn"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-              <polyline points="16 17 21 12 16 7"></polyline>
-              <line x1="21" y1="12" x2="9" y2="12"></line>
-            </svg>
-            Logout
-          </button>
+          <img
+            src={user.photoURL || ''}
+            alt={user.displayName || "avatar"}
+            className="avatar-2"
+            onClick={() => setShowWelcomeModal(true)}
+            role="button"
+          />
         </div>
       </header>
 
@@ -110,46 +179,8 @@ export default function DashboardPage() {
       <main className="dashboard-main">
         <div className="dashboard-container">
           
-          {/* Welcome Card */}
-          <div className="welcome-card">
-            <div className="avatar-section">
-              <div className="avatar-wrapper">
-                {user.photoURL ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={user.photoURL} alt={user.displayName || "avatar"} className="avatar" />
-                ) : (
-                  <div className="avatar-placeholder">
-                    {user.displayName?.charAt(0) || user.email?.charAt(0) || '?'}
-                  </div>
-                )}
-                <div className="online-indicator"></div>
-              </div>
-            </div>
-            
-            <div className="welcome-text">
-              <h1 className="welcome-title">
-                Welcome back, <span className="user-name">{user.displayName?.split(' ')[0] || 'Friend'}</span>!
-              </h1>
-              <p className="welcome-subtitle">Ready to make meaningful connections?</p>
-            </div>
-
-            <div className="user-info">
-              <div className="info-item">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                <span>{user.displayName || 'User'}</span>
-              </div>
-              <div className="info-item">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                  <polyline points="22,6 12,13 2,6"></polyline>
-                </svg>
-                <span>{user.email}</span>
-              </div>
-            </div>
-          </div>
+          {/* Welcome Card is now available as a floating modal via avatar (top-right) */}
+          
 
           {/* Action Cards Grid */}
           <div className="action-cards-grid">
@@ -166,7 +197,7 @@ export default function DashboardPage() {
               <h2 className="card-title">Find People</h2>
               <p className="card-description">Discover and connect with people who share your interests</p>
               <button 
-                onClick={() => router.push('/find-people')}
+                onClick={() => router.push('/find')}
                 className="action-btn primary-btn"
               >
                 <span>Start Exploring</span>
@@ -247,6 +278,16 @@ export default function DashboardPage() {
 
         </div>
       </main>
+
+        {/* Floating modal for welcome card */}
+        {showWelcomeModal && (
+          <div className="modal-overlay" onClick={() => setShowWelcomeModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <button className="modal-close" onClick={() => setShowWelcomeModal(false)}>×</button>
+              <WelcomeCard />
+            </div>
+          </div>
+        )}
     </div>
   );
 }
